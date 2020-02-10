@@ -3,7 +3,7 @@
   =====
 
   Version:
-    0.0 - alpha
+    1.0 - alpha
 
   Description:
     # FIXME
@@ -61,8 +61,8 @@ project = 'Lancet'
 author = ["York Su", "Vickko"]
 github = "https://github.com/YorkSu/Lancet"
 release = False
-short_version = '0.0'
-full_version = '0.0 - alpha'
+short_version = '1.0'
+full_version = '1.0 - alpha'
 version = release and short_version or full_version
 full_name = f'{project} v{version}'
 root = path
