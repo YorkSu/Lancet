@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-filepath = './dataset/york/1_Mix.wav'
+filepath = './dataset/york/2_Vox.wav'
 y, sr = librosa.load(filepath, sr=None)
 
 d = librosa.get_duration(y=y, sr=sr)
