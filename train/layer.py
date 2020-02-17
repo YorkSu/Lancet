@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Layers
+"""Layer
 
   File: 
-    /Lancet/train/layers
+    /Lancet/train/layer
 
   Description: 
     自定义网络层
@@ -24,8 +24,8 @@ tf_dtype = tf.float32
 # ========================
 
 
-class ToStft(tf.keras.layers.Layer):
-  """ToStft
+class Stft(tf.keras.layers.Layer):
+  """Stft
   
     Description:
       Based on librosa.stft
@@ -36,8 +36,8 @@ class ToStft(tf.keras.layers.Layer):
       win_length: Int, default None. None -> n_fft
       window: Str, default 'hann'.
       center: Bool, default True.
-      dtype: Str, default None. None -> 'float32'
       pad_mode: Str, default 'reflect'.
+      dtype: Str, default None. None -> 'float32'
 
     Input:
       tf.Tensor, shape=(None, Sample, Channel)
@@ -52,8 +52,8 @@ class ToStft(tf.keras.layers.Layer):
       win_length=None,
       window='hann',
       center=True,
-      dtype=None,
       pad_mode='reflect',
+      dtype=None,
       **kwargs):
     super().__init__(trainable=False, **kwargs)
     self.n_fft = n_fft
@@ -61,6 +61,7 @@ class ToStft(tf.keras.layers.Layer):
     self.win_length = win_length
     self.window = window
     self.center = center
+    self.pad_mode = pad_mode
     if dtype is None:
       self.np_dtype = np.float32
       self.tf_dtype = tf.float32
@@ -68,7 +69,8 @@ class ToStft(tf.keras.layers.Layer):
     else:
       self.np_dtype = dtype
       self.tf_dtype = dtype
-    self.pad_mode = pad_mode
+    self.dtype_ = dtype
+    
   def np_stft(self, y):
     """Numpy stft"""
     outputs = []
@@ -86,15 +88,17 @@ class ToStft(tf.keras.layers.Layer):
       yi = np.abs(xi)[:, :, np.newaxis].astype(self.np_dtype)
       outputs.append(yi)
     return np.concatenate(outputs, axis=2)
+  
   @tf.function
   def tf_stft(self, y):
     """TF stft"""
     return tf.numpy_function(self.np_stft, [y], self.tf_dtype)
+  
   def call(self, inputs):
     outputs = inputs
     input_shape = tf.keras.backend.int_shape(inputs)
     assert len(input_shape) in [2, 3], f"The legal nD of input " \
-        f"shape of `ToStft` must be 2 or 3, but got {len(input_shape)}"
+        f"shape of `Stft` must be 2 or 3, but got {len(input_shape)}"
     if len(input_shape) == 2:
       outputs = self.tf_stft(outputs)
     if len(input_shape) == 3:
@@ -109,9 +113,116 @@ class ToStft(tf.keras.layers.Layer):
       outputs = tf.keras.layers.Concatenate(axis=0)(temp)
     return outputs
 
+  def get_config(self):
+    config = {
+        'n_fft': self.n_fft,
+        'hop_length': self.hop_length,
+        'win_length': self.win_length,
+        'window': self.window,
+        'center': self.center,
+        'pad_mode': self.pad_mode,
+        'dtype': self.dtype_,}
+    return dict(list(super().get_config().items()) + list(config.items()))
 
-class ToMel(tf.keras.layers.Layer):
-  """ToMel
+
+class Istft(tf.keras.layers.Layer):
+  """Istft
+  
+    Description:
+      Based on librosa.istft
+
+    Args:
+      length: Int, default None. If provided, the output `y` is zero-padded 
+          or clipped to exactly.
+      hop_length: Int, default None. None -> win_length/4
+      win_length: Int, default None. None -> n_fft
+      window: Str, default 'hann'.
+      center: Bool, default True.
+      pad_mode: Str, default 'reflect'.
+      dtype: Str, default None. None -> 'float32'
+
+    Input:
+      tf.Tensor, shape=(None, floor(1+n_fft/2), ceil(Sample/hop_length), Channel)
+      
+    Return:
+      tf.Tensor, shape=(None, length or Sample, Channel)
+  """
+  def __init__(
+      self,
+      length=None,
+      hop_length=None,
+      win_length=None,
+      window='hann',
+      center=True,
+      dtype=None,
+      **kwargs):
+    super().__init__(trainable=False, **kwargs)
+    self.length = length
+    self.hop_length = hop_length
+    self.win_length = win_length
+    self.window = window
+    self.center = center
+    if dtype is None:
+      self.np_dtype = np.float32
+      self.tf_dtype = tf.float32
+      # FIXME: 换成识别全局dtype字符串然后自动选择
+    else:
+      self.np_dtype = dtype
+      self.tf_dtype = dtype
+    self.dtype_ = dtype
+    
+  def np_istft(self, y):
+    """Numpy istft"""
+    outputs = []
+    for i in range(y.shape[2]):
+      xi = lrs.istft(
+          stft_matrix=np.asfortranarray(y[:, :, i]),
+          hop_length=self.hop_length,
+          win_length=self.win_length,
+          window=self.window,
+          center=self.center,
+          length=self.length)
+      yi = xi[:, np.newaxis].astype(self.np_dtype)
+      outputs.append(yi)
+    return np.concatenate(outputs, axis=1)
+  
+  @tf.function
+  def tf_istft(self, y):
+    """TF istft"""
+    return tf.numpy_function(self.np_istft, [y], self.tf_dtype)
+  
+  def call(self, inputs):
+    outputs = inputs
+    input_shape = tf.keras.backend.int_shape(inputs)
+    assert len(input_shape) in [3, 4], f"The legal nD of input " \
+        f"shape of `Istft` must be 3 or 4, but got {len(input_shape)}"
+    if len(input_shape) == 3:
+      outputs = self.tf_istft(outputs)
+    if len(input_shape) == 4:
+      temp = []
+      for i in range(input_shape[0]):
+        xi = tf.keras.layers.Lambda(
+            lambda x, t: x[t, :, :, :],
+            output_shape=input_shape[1:],
+            arguments={'t': i})(outputs)
+        yi = self.tf_istft(xi)
+        temp.append(tf.expand_dims(yi, 0))
+      outputs = tf.keras.layers.Concatenate(axis=0)(temp)
+    return outputs
+
+  def get_config(self):
+    config = {
+        'length': self.length,
+        'hop_length': self.hop_length,
+        'win_length': self.win_length,
+        'window': self.window,
+        'center': self.center,
+        'dtype': self.dtype_,}
+    return dict(list(super().get_config().items()) + list(config.items()))
+
+
+class Mel(tf.keras.layers.Layer):
+  """Mel
     
     Description:
       Based on librosa.feature.melspectrogram
@@ -124,9 +235,9 @@ class ToMel(tf.keras.layers.Layer):
       win_length: Int, default None. None -> n_fft
       window: Str, default 'hann'.
       center: Bool, default True.
-      dtype: Str, default None. None -> 'float32'
       pad_mode: Str, default 'reflect'.
       power: Float, default 2.0.
+      dtype: Str, default None. None -> 'float32'
 
     Input:
       tf.Tensor, shape=(None, Sample, Channel)
@@ -143,9 +254,9 @@ class ToMel(tf.keras.layers.Layer):
       win_length=None,
       window='hann',
       center=True,
-      dtype=None,
       pad_mode='reflect',
       power=2.0,
+      dtype=None,
       **kwargs):
     super().__init__(trainable=False, **kwargs)
     self.sr = sr
@@ -155,6 +266,8 @@ class ToMel(tf.keras.layers.Layer):
     self.win_length = win_length
     self.window = window
     self.center = center
+    self.pad_mode = pad_mode
+    self.power = power
     if dtype is None:
       self.np_dtype = np.float32
       self.tf_dtype = tf.float32
@@ -162,13 +275,13 @@ class ToMel(tf.keras.layers.Layer):
     else:
       self.np_dtype = dtype
       self.tf_dtype = dtype
-    self.pad_mode = pad_mode
-    self.power = power
+    self.dtype_ = dtype
+    
   def np_mel(self, y):
     """Numpy mel"""
     outputs = []
     for i in range(y.shape[1]):
-      outputs.append(lrs.feature.melspectrogram(
+      xi = lrs.feature.melspectrogram(
           y=np.asfortranarray(y[:, i]),
           sr=self.sr,
           S=None,
@@ -179,16 +292,21 @@ class ToMel(tf.keras.layers.Layer):
           window=self.window,
           center=self.center,
           pad_mode=self.pad_mode,
-          power=self.power)[:, :, np.newaxis])
+          power=self.power)
+      yi = xi[:, :, np.newaxis].astype(self.np_dtype)
+      outputs.append(yi)
     return np.concatenate(outputs, axis=2)
+  
   @tf.function
   def tf_mel(self, y):
+    """TF mel"""
     return tf.numpy_function(self.np_mel, [y], self.tf_dtype)
+  
   def call(self, inputs):
     outputs = inputs
     input_shape = tf.keras.backend.int_shape(inputs)
     assert len(input_shape) in [2, 3], f"The legal nD of input " \
-        f"shape of `ToMel` must be 2 or 3, but got {len(input_shape)}"
+        f"shape of `Mel` must be 2 or 3, but got {len(input_shape)}"
     if len(input_shape) == 2:
       outputs = self.tf_mel(outputs)
     if len(input_shape) == 3:
@@ -203,14 +321,30 @@ class ToMel(tf.keras.layers.Layer):
       outputs = tf.keras.layers.Concatenate(axis=0)(temp)
     return outputs
 
+  def get_config(self):
+    config = {
+        'sr': self.sr,
+        'n_mels': self.n_mels,
+        'n_fft': self.n_fft,
+        'hop_length': self.hop_length,
+        'win_length': self.win_length,
+        'window': self.window,
+        'center': self.center,
+        'pad_mode': self.pad_mode,
+        'power': self.power,
+        'dtype': self.dtype_,}
+    return dict(list(super().get_config().items()) + list(config.items()))
 
-class ToCqt(tf.keras.layers.Layer):
-  """ToCqt
+
+class Cqt(tf.keras.layers.Layer):
+  """Cqt
   
     Description:
-      Based on librosa.cqt
+      Based on librosa.cqt&hybrid_cqt&pseudo_cqt
 
     Args:
+      mode: Str. 'cqt'->cqt, 'hcqt'&'hybrid_cqt'->hybrid_cqt, 
+          'pcqt'&'pseudo_cqt'->pseudo_cqt
       sr: Int. Sample rate.
       n_mels: Int, default 128.
       n_fft: Int, default 2048.
@@ -226,7 +360,7 @@ class ToCqt(tf.keras.layers.Layer):
       tf.Tensor, shape=(None, Sample, Channel)
 
     Return:
-      tf.Tensor, shape=(None, n_mels, ceil(Sample/hop_length), Channel)
+      tf.Tensor, shape=(None, n_bins, ceil(Sample/hop_length), Channel)
   """
   def __init__(
       self,
@@ -266,16 +400,18 @@ class ToCqt(tf.keras.layers.Layer):
     else:
       self.np_dtype = dtype
       self.tf_dtype = dtype
+    self.dtype_ = dtype
+  
   def np_cqt(self, y):
     """Numpy cqt"""
     if self.mode == 'cqt':
       method = lrs.cqt
-    elif self.mode in ['hcqt', 'hybrid-cqt']:
+    elif self.mode in ['hcqt', 'hybrid_cqt']:
       method = lrs.hybrid_cqt
-    elif self.mode in ['pcqt', 'pseudo-cqt']:
+    elif self.mode in ['pcqt', 'pseudo_cqt']:
       method = lrs.pseudo_cqt
     else:
-      raise Exception(f"[ModeError] ToCqt.mode illegal, got {self.mode}")
+      raise ValueError(f'[Invalid] Cqt.mode, got {self.mode}')
     outputs = []
     for i in range(y.shape[1]):
       xi = method(
@@ -297,14 +433,17 @@ class ToCqt(tf.keras.layers.Layer):
       yi = np.abs(xi)[:, :, np.newaxis].astype(self.np_dtype)
       outputs.append(yi)
     return np.concatenate(outputs, axis=2)
+  
   @tf.function
   def tf_cqt(self, y):
+    """TF cqt"""
     return tf.numpy_function(self.np_cqt, [y], self.tf_dtype)
+  
   def call(self, inputs):
     outputs = inputs
     input_shape = tf.keras.backend.int_shape(inputs)
     assert len(input_shape) in [2, 3], f"The legal nD of input " \
-        f"shape of `ToCqt` must be 2 or 3, but got {len(input_shape)}"
+        f"shape of `Cqt` must be 2 or 3, but got {len(input_shape)}"
     if len(input_shape) == 2:
       outputs = self.tf_cqt(outputs)
     if len(input_shape) == 3:
@@ -319,6 +458,24 @@ class ToCqt(tf.keras.layers.Layer):
       outputs = tf.keras.layers.Concatenate(axis=0)(temp)
     return outputs
 
+  def get_config(self):
+    config = {
+        'mode': self.mode,
+        'sr': self.sr,
+        'n_bins': self.n_bins,
+        'hop_length': self.hop_length,
+        'fmin': self.fmin,
+        'bins_per_octave': self.bins_per_octave,
+        'tuning': self.tuning,
+        'filter_scale': self.filter_scale,
+        'norm': self.norm,
+        'sparsity': self.sparsity,
+        'window': self.window,
+        'scale': self.scale,
+        'pad_mode': self.pad_mode,
+        'dtype': self.dtype_,}
+    return dict(list(super().get_config().items()) + list(config.items()))
+
 
 if __name__ == "__main__":
   filepath = './dataset/york/1_Vox.wav'
@@ -326,10 +483,12 @@ if __name__ == "__main__":
   y0 = y0.transpose(1, 0)
   y1 = tf.Variable([y0, y0])
   print(y1.shape)
-  y2 = ToStft()(y1)
+  y2 = Stft()(y1)
   print(y2.shape)
-  y3 = ToMel(sr)(y1)
+  y3 = Mel(sr)(y1)
   print(y3.shape)
-  y4 = ToCqt('cqt', sr)(y1)
+  y4 = Cqt('cqt', sr)(y1)
   print(y4.shape)
+  y5 = Istft(441000)(y2)
+  print(y5.shape)
 

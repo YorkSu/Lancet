@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 filepath = './dataset/york/1_Mix.wav'
 
 y, sr = librosa.load(filepath, sr=None)
+print(y.shape)
 
 ### stft-spectrogram (*1025, t) *1+n_fft/2
 stft = librosa.stft(y=y, n_fft=2048)
