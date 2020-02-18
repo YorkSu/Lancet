@@ -279,6 +279,12 @@ class Stft(tf.keras.layers.Layer):
     else:
       raise ValueError(f"[Invalid] nD, got {len(input_shape)}")
     
+    # 拆出复数的实部和虚部
+    outputs = [
+        x
+        for c in outputs
+        for x in [tf.math.real(c), tf.math.imag(c)]]
+
     return tf.keras.layers.Concatenate(axis=-1)(outputs)
 
   def get_config(self):
@@ -336,31 +342,39 @@ class Istft(tf.keras.layers.Layer):
       window_fn = self.window_fn
     outputs = []
     if len(input_shape) == 3:
-      for i in range(input_shape[-1]):
+      for i in range(input_shape[-1] // 2):
         xi = tf.keras.layers.Lambda(
-            lambda x, t: x[:, :, t],
+            lambda x, t: x[:, :, 2 * t],
             arguments={'t': i})(inputs)
-        xi = tf.transpose(xi, [1, 0])
-        yi = tf.signal.inverse_stft(
-            xi,
+        xj = tf.keras.layers.Lambda(
+            lambda x, t: x[:, :, 2 * t + 1],
+            arguments={'t': i})(inputs)
+        x = tf.complex(xi, xj)
+        x = tf.transpose(x, [1, 0])
+        y = tf.signal.inverse_stft(
+            x,
             frame_length=self.frame_length,
             frame_step=self.frame_step,
             fft_length=self.fft_length,
             window_fn=window_fn)
-        outputs.append(tf.expand_dims(yi, -1))
+        outputs.append(tf.expand_dims(y, -1))
     elif len(input_shape) == 4:
-      for i in range(input_shape[-1]):
+      for i in range(input_shape[-1] // 2):
         xi = tf.keras.layers.Lambda(
-            lambda x, t: x[:, :, :, t],
+            lambda x, t: x[:, :, :, 2 * t],
             arguments={'t': i})(inputs)
-        xi = tf.transpose(xi, [0, 2, 1])
-        yi = tf.signal.inverse_stft(
-            xi,
+        xj = tf.keras.layers.Lambda(
+            lambda x, t: x[:, :, :, 2 * t + 1],
+            arguments={'t': i})(inputs)
+        x = tf.complex(xi, xj)
+        x = tf.transpose(x, [0, 2, 1])
+        y = tf.signal.inverse_stft(
+            x,
             frame_length=self.frame_length,
             frame_step=self.frame_step,
             fft_length=self.fft_length,
             window_fn=window_fn)
-        outputs.append(tf.expand_dims(yi, -1))
+        outputs.append(tf.expand_dims(y, -1))
     else:
       raise ValueError(f"[Invalid] nD, got {len(input_shape)}")
     
