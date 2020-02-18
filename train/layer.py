@@ -274,16 +274,16 @@ class Stft(tf.keras.layers.Layer):
             fft_length=self.fft_length,
             window_fn=window_fn,
             pad_end=self.pad_end)
-        yi = tf.transpose(yi, [0, 2, 1])
-        outputs.append(tf.expand_dims(yi, -1))
+        yi = tf.expand_dims(tf.transpose(yi, [0, 2, 1]), -1)
+        outputs.extend([tf.math.real(yi), tf.math.imag(yi)])
     else:
       raise ValueError(f"[Invalid] nD, got {len(input_shape)}")
     
-    # 拆出复数的实部和虚部
-    outputs = [
-        x
-        for c in outputs
-        for x in [tf.math.real(c), tf.math.imag(c)]]
+    # # 拆出复数的实部和虚部
+    # complexs = outputs
+    # outputs = []
+    # for c in complexs:
+    #   outputs.extend([tf.math.real(c), tf.math.imag(c)])
 
     return tf.keras.layers.Concatenate(axis=-1)(outputs)
 
@@ -321,12 +321,14 @@ class Istft(tf.keras.layers.Layer):
   """
   def __init__(
       self,
+      length=None,
       frame_length=2048,
       frame_step=512,
       fft_length=None,
       window_fn='hann',
       **kwargs):
     super().__init__(trainable=False, **kwargs)
+    self.length = length
     self.frame_length = frame_length
     self.frame_step = frame_step
     self.fft_length = fft_length
@@ -335,9 +337,10 @@ class Istft(tf.keras.layers.Layer):
   def call(self, inputs):
     input_shape = tf.keras.backend.int_shape(inputs)
     if self.window_fn == 'hann':
-      window_fn = tf.signal.inverse_stft_window_fn(
-          self.frame_step,
-          forward_window_fn=tf.signal.hann_window)
+      window_fn = tf.signal.hann_window
+      # window_fn = tf.signal.inverse_stft_window_fn(
+      #     self.frame_step,
+      #     forward_window_fn=tf.signal.hann_window)
     else:
       window_fn = self.window_fn
     outputs = []
@@ -351,6 +354,7 @@ class Istft(tf.keras.layers.Layer):
             arguments={'t': i})(inputs)
         x = tf.complex(xi, xj)
         x = tf.transpose(x, [1, 0])
+        print(x.shape, x.dtype)
         y = tf.signal.inverse_stft(
             x,
             frame_length=self.frame_length,
@@ -358,6 +362,14 @@ class Istft(tf.keras.layers.Layer):
             fft_length=self.fft_length,
             window_fn=window_fn)
         outputs.append(tf.expand_dims(y, -1))
+      outputs = tf.keras.layers.Concatenate(axis=-1)(outputs)
+      if outputs.shape[-2] < self.length:
+        outputs = tf.pad(outputs, paddings=((0, 0),
+            (self.length - outputs.shape[-2], 0)))
+      else:
+        outputs = tf.keras.layers.Lambda(
+              lambda x: x[:self.length, :])(outputs)
+        # outputs = outputs[:self.length, :]
     elif len(input_shape) == 4:
       for i in range(input_shape[-1] // 2):
         xi = tf.keras.layers.Lambda(
@@ -368,17 +380,32 @@ class Istft(tf.keras.layers.Layer):
             arguments={'t': i})(inputs)
         x = tf.complex(xi, xj)
         x = tf.transpose(x, [0, 2, 1])
+        print(x.shape, x.dtype)
         y = tf.signal.inverse_stft(
             x,
             frame_length=self.frame_length,
             frame_step=self.frame_step,
-            fft_length=self.fft_length,
-            window_fn=window_fn)
+            # fft_length=self.fft_length,
+            # window_fn=window_fn
+            )
+        print(y.shape, y.dtype)
         outputs.append(tf.expand_dims(y, -1))
+      outputs = tf.keras.layers.Concatenate(axis=-1)(outputs)
+      print(outputs.shape)
+      if self.length is not None:
+        output_shape = tf.keras.backend.int_shape(outputs)
+        if output_shape[-2] < self.length:
+          outputs = tf.pad(outputs, paddings=((0, 0),
+              (0, self.length - output_shape[-2]),
+              (0, 0)))
+        else:
+          outputs = tf.keras.layers.Lambda(
+              lambda x: x[:, :self.length, :])(outputs)
+          # outputs = outputs[:, :self.length, :]
     else:
       raise ValueError(f"[Invalid] nD, got {len(input_shape)}")
     
-    return tf.keras.layers.Concatenate(axis=-1)(outputs)
+    return outputs # tf.keras.layers.Concatenate(axis=-1)(outputs)
 
   def get_config(self):
     config = {
@@ -649,6 +676,9 @@ if __name__ == "__main__":
   filepath = './dataset/york/1_Vox.wav'
   y0, sr = lrs.load(filepath, sr=None, mono=False)
   y0 = y0.transpose(1, 0)
+  y0 = y0[:512 * 512, :]
+  print(y0.shape)
+  # y1 = tf.Variable(y0)
   y1 = tf.Variable([y0, y0])
   print(y1.shape)
   y2 = Stft()(y1)
@@ -658,6 +688,7 @@ if __name__ == "__main__":
   # y4 = Cqt('cqt', sr)(y1)
   # print(y4.shape)
   # yc = tf.keras.layers.Conv2D(2, 3, padding='same')(y2)
-  y5 = Istft()(y2)
+  # y5 = Istft(length=441000)(y2)
+  y5 = Istft(length=512 * 512)(y2)
   print(y5.shape, y5.dtype)
 
