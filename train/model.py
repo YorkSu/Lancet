@@ -12,6 +12,7 @@
 import tensorflow as tf
 
 from Lancet.train import abc
+from Lancet.train import layer
 from Lancet.train import nn
 
 
@@ -70,6 +71,7 @@ class UNet(Network):
   def build(self):
     inputs = nn.input(self.input_shape)
     x = inputs
+    x = layer.Stft()(x)
     # x = self.nn.dense(self.output_shape, activation='softmax')(x)
     return nn.model(inputs, x)
 
@@ -88,6 +90,11 @@ class Blade10(Network):
     x = inputs
     # x = self.nn.dense(self.output_shape, activation='softmax')(x)
     return nn.model(inputs, x)
+
+
+if __name__ == "__main__":
+  model = UNet((512 * 512, 2), (512 * 512, 2))
+  model.summary()
 
 
 

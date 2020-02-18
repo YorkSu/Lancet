@@ -48,7 +48,7 @@ import sys as _sys
 
 
 Lancet_path = _os.path.dirname(_os.path.abspath(__file__))
-if __root__ not in _sys.path:
+if Lancet_path not in _sys.path:
   _sys.path.append(Lancet_path)
 
 
@@ -65,9 +65,9 @@ short_version = '1.0'
 full_version = '1.0 - alpha'
 version = release and short_version or full_version
 full_name = f'{project} v{version}'
-root = path
+root = Lancet_path
 __version__ = version
-__root__ = path
+__root__ = Lancet_path
 
 
 # del _os, _sys, _absolute_import, _division, _print_function
