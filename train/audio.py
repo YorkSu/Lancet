@@ -15,6 +15,30 @@ import math
 import tensorflow as tf
 
 
+def auto_channel(func):
+  """Auto Split and Merge Channel
+
+    Description:
+      A Python.Decorator for stft/istft
+      if Args.channel is True, this function automatically split
+      and merge the channel.
+  """
+  def inner_func(*args, **kwargs):
+    if 'channel' in kwargs and kwargs['channel']:
+      if 'Tensor' in kwargs:
+        Tensor = kwargs['Tensor']
+      else:
+        Tensor = args[0]
+      Tensors = split(Tensor)
+      outputs = []
+      for t in Tensors:
+        outputs.append(func(t, *args[1:], **kwargs))
+      return merge(outputs)
+    else:
+      return func(*args, **kwargs)
+  return inner_func
+
+
 def de_complex(Tensor):
   """Transform tf.complex to 2 tf.float
   
@@ -230,7 +254,7 @@ def to_length(Tensor, length, channel=True, pad_mode='reflect'):
       outputs = Tensor
   return outputs
 
-
+@auto_channel
 def stft(
     Tensor,
     n_fft=2048,
@@ -238,7 +262,8 @@ def stft(
     frame_step=None,
     window_fn=tf.signal.hann_window,
     pad_end=True,
-    pad_mode='reflect'):
+    pad_mode='reflect',
+    *, channel=False):
   """Short-time Fourier transform (STFT)
 
     Description:
@@ -251,7 +276,7 @@ def stft(
       FIXME
 
     Return:
-      Tensor[shape=(1+n_fft/2, n_frames), dtype=tf.complex64]
+      Tensor[shape=(n_frames, 1+n_fft/2), dtype=tf.complex64]
   """
   fft_length = tf.convert_to_tensor(n_fft, name='fft_length')
   if frame_length is None:
@@ -282,45 +307,113 @@ def stft(
 
   return tf.signal.rfft(frame, [fft_length])
 
+@auto_channel
+def istft(
+    Tensor,
+    n_fft=None,
+    frame_length=None,
+    frame_step=None,
+    length=None,
+    window_fn=tf.signal.hann_window,
+    *, channel=False):
+  """Inverse Short-time Fourier transform (ISTFT)
+
+    Description:
+      Converts a complex-valued spectrogram `stft_matrix` to time-series `y`
+      by minimizing the mean squared error between `stft_matrix` and STFT of
+      `y` as described in up to Section 2 (reconstruction from MSTFT).
+  
+      In general, window function, hop length and other parameters should be 
+      same as in stft, which mostly leads to perfect reconstruction of a 
+      signal from unmodified `stft_matrix`.
+
+    Args:
+      Tensor: tf.Tensor[shape=(n_frames, 1+n_fft/2), 
+          dtype=tf.complex64]
+      pad_mode: Str, default 'reflect'. See tf.pad.mode
+      FIXME
+
+    Return:
+      Tensor[shape=(..., n), dtype=tf.float]
+  """
+  Tensor = tf.convert_to_tensor(Tensor)
+  t_shape = list(Tensor.get_shape())
+
+  if n_fft is None:
+    n_fft = 2 * (t_shape[-1] - 1)
+
+  fft_length = tf.convert_to_tensor(n_fft, name='fft_length')
+  if frame_length is None:
+    frame_length = tf.convert_to_tensor(n_fft, name='frame_length')
+  if frame_step is None:
+    frame_step = tf.convert_to_tensor(frame_length // 4, name='frame_step')
+  
+  raw_frame = tf.signal.irfft(Tensor, [fft_length])
+  if window_fn is not None:
+    window = window_fn(frame_length, dtype=Tensor.dtype.real_dtype)
+    raw_frame *= window
+  
+  real_frame = tf.unstack(raw_frame, axis=-2, name="unstack")
+  w_shape = list(real_frame[0].get_shape())
+  step_shape = list(w_shape[:-1]) + [int(frame_step)]
+  block = tf.zeros(shape=w_shape, dtype=tf.float32)
+  step = tf.zeros(shape=step_shape, dtype=tf.float32)
+  
+  slices = []
+  for frame in real_frame:
+    block += frame
+    slices.append(block[..., :frame_step])
+    block = tf.concat([block[..., frame_step:], step], axis=-1)
+  slices.append(block[..., :frame_length - frame_step])
+
+  outputs = tf.concat(slices, axis=-1)
+
+  if length is not None:
+    outputs = to_length(outputs, length, channel=False)
+
+  return outputs
+
 
 if __name__ == "__main__":
   y = tf.random.normal(dtype=tf.float32, shape=[1, 441000])
   y2 = tf.random.normal(dtype=tf.float32, shape=[1, 441000, 2])
   
   ### basic
-  stft_x = stft(y)
+  stft_x = stft(y2, channel=True)
   print(stft_x.shape, stft_x.dtype)
-  swap1 = swap(stft_x, channel=False)
-  print(swap1.shape)
-  stft_x2 = merge([stft_x])
-  print(stft_x2.shape)
-  swap2 = swap(stft_x2)
-  print(swap2.shape)
+  # istft_x = istft(stft_x, length=441000)
+  # print(istft_x.shape, istft_x.dtype)
+  # swap1 = swap(stft_x, channel=False)
+  # print(swap1.shape)
+  # stft_x2 = merge([stft_x])
+  # print(stft_x2.shape)
+  # swap2 = swap(stft_x2)
+  # print(swap2.shape)
   
   ### split&merge, complex
-  splitx = split(y2)
-  print(splitx[0].shape, splitx[1].shape)
-  stft_d = []
-  for channelt in splitx:
-    stft_d.append(stft(channelt))
-  mergex = merge(stft_d)
-  print(mergex.shape, mergex.dtype)
-  dec = de_complex(mergex)
-  print(dec.shape, dec.dtype)
-  toc = to_complex(dec)
-  print(toc.shape, toc.dtype)
+  # splitx = split(y2)
+  # print(splitx[0].shape, splitx[1].shape)
+  # stft_d = []
+  # for channelt in splitx:
+  #   stft_d.append(stft(channelt))
+  # mergex = merge(stft_d)
+  # print(mergex.shape, mergex.dtype)
+  # dec = de_complex(mergex)
+  # print(dec.shape, dec.dtype)
+  # toc = to_complex(dec)
+  # print(toc.shape, toc.dtype)
   
   ### length part
-  cut1 = cutting(y, 440000, channel=False)
-  print(cut1.shape)
-  cut2 = cutting(y2, 440000)
-  print(cut2.shape)
-  pad1 = padding(cut1, 441000, channel=False)
-  print(pad1.shape)
-  pad2 = padding(cut2, 441000)
-  print(pad2.shape)
-  tlen1 = to_length(y, 320000, channel=False)
-  print(tlen1.shape)
-  tlen2 = to_length(y2, 500000)
-  print(tlen2.shape)
+  # cut1 = cutting(y, 440000, channel=False)
+  # print(cut1.shape)
+  # cut2 = cutting(y2, 440000)
+  # print(cut2.shape)
+  # pad1 = padding(cut1, 441000, channel=False)
+  # print(pad1.shape)
+  # pad2 = padding(cut2, 441000)
+  # print(pad2.shape)
+  # tlen1 = to_length(y, 320000, channel=False)
+  # print(tlen1.shape)
+  # tlen2 = to_length(y2, 500000)
+  # print(tlen2.shape)
 
