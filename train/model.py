@@ -73,7 +73,7 @@ class UNet(Network):
     x = inputs
     x = layer.Stft()(x)
     # x = self.nn.dense(self.output_shape, activation='softmax')(x)
-    x = layer.Istft(length=self.input_shape[0])(x)
+    # x = layer.Istft(length=self.input_shape[0])(x)
     return nn.model(inputs, x)
 
 

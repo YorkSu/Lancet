@@ -15,30 +15,6 @@ import math
 import tensorflow as tf
 
 
-def auto_channel(func):
-  """Auto Split and Merge Channel
-
-    Description:
-      A Python.Decorator for stft/istft
-      if Args.channel is True, this function automatically split
-      and merge the channel.
-  """
-  def inner_func(*args, **kwargs):
-    if 'channel' in kwargs and kwargs['channel']:
-      if 'Tensor' in kwargs:
-        Tensor = kwargs['Tensor']
-      else:
-        Tensor = args[0]
-      Tensors = split(Tensor)
-      outputs = []
-      for t in Tensors:
-        outputs.append(func(t, *args[1:], **kwargs))
-      return merge(outputs)
-    else:
-      return func(*args, **kwargs)
-  return inner_func
-
-
 def de_complex(Tensor):
   """Transform tf.complex to 2 tf.float
   
@@ -103,10 +79,11 @@ def split(Tensor):
       List of Tensor[without channel axis]
   """
   Tensor = tf.convert_to_tensor(Tensor)
-  t_shape = list(Tensor.get_shape())
+  # t_shape = list(Tensor.get_shape())
+  # t_shape = Tensor.shape
   
   outputs = []
-  for i in range(t_shape[-1]):
+  for i in tf.range(Tensor.shape[-1]):
     outputs.append(Tensor[..., i])
   return outputs
 
@@ -131,7 +108,26 @@ def merge(Tensors):
   return tf.stack(outputs, axis=-1)
 
 
-def swap(Tensor, channel=True):
+def auto_channel(func):
+  """Auto Split and Merge Channel
+
+    Description:
+      A Python.Decorator for stft/istft
+      if Args.channel is True, this function automatically split
+      and merge the channel.
+  """
+  def inner_func(*args, channel=True, **kwargs):
+    if channel:
+      if args:
+        Tensor = args[0]
+      else:
+        Tensor = kwargs.pop('Tensor')
+      return merge([func(t, *args[1:], **kwargs) for t in split(Tensor)])
+    return func(*args, **kwargs)
+  return inner_func
+
+@auto_channel
+def swap(Tensor, **kwargs):
   """Swap
 
     Description:
@@ -144,17 +140,15 @@ def swap(Tensor, channel=True):
     Return:
       Tensor[shape=(..., n_frames, n, ...)]
   """
+  del kwargs
   Tensor = tf.convert_to_tensor(Tensor)
-  t_shape = list(Tensor.get_shape())
-  rank = len(t_shape)
-  if channel:
-    axis = list(range(rank - 3)) + [rank - 2, rank - 3, rank - 1]
-  else:
-    axis = list(range(rank - 2)) + [rank - 1, rank - 2]
+  # t_shape = list(Tensor.get_shape())
+  rank = len(Tensor.get_shape())
+  axis = list(range(rank - 2)) + [rank - 1, rank - 2]
   return tf.transpose(Tensor, axis)
 
-
-def cutting(Tensor, length, channel=True):
+@auto_channel
+def cutting(Tensor, length, **kwargs):
   """Cutting
     
     Description:
@@ -168,20 +162,16 @@ def cutting(Tensor, length, channel=True):
     Return:
       Tensor[shape=(..., length, channel)]
   """
+  del kwargs
   Tensor = tf.convert_to_tensor(Tensor)
   t_shape = list(Tensor.get_shape())
-  if channel:
-    assert t_shape[-2] > length, \
-        f"[Invalid] length too large, got {length}, sample {t_shape[-2]}"
-    outputs = Tensor[..., :length, :]
-  else:
-    assert t_shape[-1] > length, \
-        f"[Invalid] length too large, got {length}, sample {t_shape[-1]}"
-    outputs = Tensor[..., :length]
+  assert t_shape[-1] > length, \
+      f"[Invalid] length too large, got {length}, sample {t_shape[-1]}"
+  outputs = Tensor[..., :length]
   return outputs
 
-
-def padding(Tensor, length, channel=True, pad_mode='reflect'):
+@auto_channel
+def padding(Tensor, length, pad_mode='reflect', **kwargs):
   """Padding
     
     Description:
@@ -196,25 +186,19 @@ def padding(Tensor, length, channel=True, pad_mode='reflect'):
     Return:
       Tensor[shape=(..., length, channel)]
   """
+  del kwargs
   Tensor = tf.convert_to_tensor(Tensor)
   t_shape = list(Tensor.get_shape())
   t_rank = len(t_shape)
-  if channel:
-    assert t_shape[-2] < length, \
-        f"[Invalid] length too small, got {length}, sample {t_shape[-2]}"
-    pad = [[0, length - t_shape[-2]], [0, 0]]
-    if t_rank > 2:
-      pad = [[0, 0]] * (t_rank - 2) + pad
-  else:
-    assert t_shape[-1] < length, \
-        f"[Invalid] length too small, got {length}, sample {t_shape[-1]}"
-    pad = [[0, length - t_shape[-1]]]
-    if t_rank > 1:
-      pad = [[0, 0]] * (t_rank - 1) + pad
+  assert t_shape[-1] < length, \
+      f"[Invalid] length too small, got {length}, sample {t_shape[-1]}"
+  pad = [[0, length - t_shape[-1]]]
+  if t_rank > 1:
+    pad = [[0, 0]] * (t_rank - 1) + pad
   return tf.pad(Tensor, paddings=pad, mode=pad_mode)
 
-
-def to_length(Tensor, length, channel=True, pad_mode='reflect'):
+@auto_channel
+def to_length(Tensor, length, pad_mode='reflect', **kwargs):
   """Convert to target length
   
     Description:
@@ -229,41 +213,33 @@ def to_length(Tensor, length, channel=True, pad_mode='reflect'):
     Return:
       Tensor[shape=(..., length, channel)]
   """
+  del kwargs
   Tensor = tf.convert_to_tensor(Tensor)
   t_shape = list(Tensor.get_shape())
   t_rank = len(t_shape)
-  if channel:
-    if t_shape[-2] > length:
-      outputs = Tensor[..., :length, :]
-    elif t_shape[-2] < length:
-      pad = [[0, length - t_shape[-2]], [0, 0]]
-      if t_rank > 2:
-        pad = [[0, 0]] * (t_rank - 2) + pad
-      outputs = tf.pad(Tensor, paddings=pad, mode=pad_mode)
-    else:
-      outputs = Tensor
+  if t_shape[-1] > length:
+    outputs = Tensor[..., :length]
+  elif t_shape[-1] < length:
+    pad = [[0, length - t_shape[-1]]]
+    if t_rank > 1:
+      pad = [[0, 0]] * (t_rank - 1) + pad
+    outputs = tf.pad(Tensor, paddings=pad, mode=pad_mode)
   else:
-    if t_shape[-1] > length:
-      outputs = Tensor[..., :length]
-    elif t_shape[-1] < length:
-      pad = [[0, length - t_shape[-1]]]
-      if t_rank > 1:
-        pad = [[0, 0]] * (t_rank - 1) + pad
-      outputs = tf.pad(Tensor, paddings=pad, mode=pad_mode)
-    else:
-      outputs = Tensor
+    outputs = Tensor
   return outputs
 
-@auto_channel
+# @auto_channel
+# @tf.function
 def stft(
     Tensor,
-    n_fft=2048,
+    fft_length=2048,
     frame_length=None,
     frame_step=None,
     window_fn=tf.signal.hann_window,
     pad_end=True,
     pad_mode='reflect',
-    *, channel=False):
+    name=None,
+    **kwargs):
   """Short-time Fourier transform (STFT)
 
     Description:
@@ -276,46 +252,70 @@ def stft(
       FIXME
 
     Return:
-      Tensor[shape=(n_frames, 1+n_fft/2), dtype=tf.complex64]
+      Tensor[shape=(n_frames, 1+fft_length/2), dtype=tf.complex64]
   """
-  fft_length = tf.convert_to_tensor(n_fft, name='fft_length')
-  if frame_length is None:
-    frame_length = tf.convert_to_tensor(n_fft, name='frame_length')
-  if frame_step is None:
-    frame_step = tf.convert_to_tensor(frame_length // 4, name='frame_step')
+  del kwargs
+  with tf.name_scope(name or 'Lancet_stft'):
+    Tensor = tf.convert_to_tensor(Tensor, name='Tensor')
+    Tensor.shape.with_rank_at_least(1)
+    fft_length = tf.convert_to_tensor(fft_length, name='frame_length')
+    fft_length.shape.assert_has_rank(0)
+    if frame_length is None:
+      frame_length = fft_length
+    frame_length = tf.convert_to_tensor(frame_length, name='frame_length')
+    frame_length.shape.assert_has_rank(0)
+    if frame_step is None:
+      frame_step = fft_length // 4
+    frame_step = tf.convert_to_tensor(frame_step, name='frame_step')
+    frame_step.shape.assert_has_rank(0)
+    
+    framed_signals = tf.signal.frame(
+        Tensor, frame_length, frame_step, pad_end=pad_end)
+
+    if window_fn is not None:
+      window = window_fn(frame_length, dtype=framed_signals.dtype)
+      framed_signals *= window
+
+    return tf.signal.rfft(framed_signals, [fft_length])
+  # fft_length = tf.convert_to_tensor(fft_length, name='fft_length')
+  # if frame_length is None:
+  #   frame_length = tf.convert_to_tensor(fft_length, name='frame_length')
+  # if frame_step is None:
+  #   frame_step = tf.convert_to_tensor(frame_length // 4, name='frame_step')
   
-  Tensor = tf.convert_to_tensor(Tensor)
-  t_shape = list(Tensor.get_shape())
-  t_rank = len(t_shape)
+  # Tensor = tf.convert_to_tensor(Tensor)
+  # t_shape = Tensor.shape # list(Tensor.get_shape())
+  # t_rank = tf.rank(Tensor) # len(t_shape)
 
-  if pad_end:
-    t_pad = frame_length - t_shape[-1] % frame_step
-    pad = [[0, t_pad]]
-    if t_rank > 1:
-      pad = [[0, 0]] * (t_rank - 1) + pad
-    Tensor = tf.pad(Tensor, paddings=pad, mode=pad_mode)
+  # if pad_end:
+  #   pad = tf.convert_to_tensor([[0, frame_length - t_shape[-1] % frame_step]], dtype=tf.int32)
+  #   if t_rank > 1:
+  #     pad = tf.concat([tf.zeros(shape=(t_rank - 1, 2), dtype=tf.int32), pad], axis=0)
+  #   Tensor = tf.pad(Tensor, paddings=pad, mode=pad_mode)
+  # # f_shape = t_shape[:-1] + [int(frame_length), math.ceil(t_shape[-1] / int(frame_step))]
+  
+  # frame = []
+  # for i in tf.range(tf.math.ceil(t_shape[-1] / frame_step), dtype=tf.int32):# f_shape[-1]
+  #   frame.append(Tensor[..., i*frame_step:i*frame_step + frame_length])
+  # frame = tf.stack(frame, axis=-1)
+  # # frame = tf.transpose(frame, list(range(t_rank - 2)) + [t_rank - 1, t_rank - 2])
+  # frame = swap(frame, channel=False)
 
-  f_shape = t_shape[:-1] + [int(frame_length), math.ceil(t_shape[-1] / frame_step)]
-  frame = []
-  for i in tf.range(f_shape[-1]):
-    frame.append(Tensor[..., i*frame_step:i*frame_step + frame_length])
-  frame = tf.stack(frame, axis=-2)
+  # if window_fn is not None:
+  #   window = window_fn(frame_length, dtype=frame.dtype)
+  #   frame *= window
 
-  if window_fn is not None:
-    window = window_fn(frame_length, dtype=frame.dtype)
-    frame *= window
-
-  return tf.signal.rfft(frame, [fft_length])
+  # return tf.signal.rfft(frame, [fft_length])
 
 @auto_channel
 def istft(
     Tensor,
-    n_fft=None,
+    fft_length=None,
     frame_length=None,
     frame_step=None,
     length=None,
     window_fn=tf.signal.hann_window,
-    *, channel=False):
+    **kwargs):
   """Inverse Short-time Fourier transform (ISTFT)
 
     Description:
@@ -328,7 +328,7 @@ def istft(
       signal from unmodified `stft_matrix`.
 
     Args:
-      Tensor: tf.Tensor[shape=(n_frames, 1+n_fft/2), 
+      Tensor: tf.Tensor[shape=(n_frames, 1+fft_length/2), 
           dtype=tf.complex64]
       pad_mode: Str, default 'reflect'. See tf.pad.mode
       FIXME
@@ -336,15 +336,16 @@ def istft(
     Return:
       Tensor[shape=(..., n), dtype=tf.float]
   """
+  del kwargs
   Tensor = tf.convert_to_tensor(Tensor)
   t_shape = list(Tensor.get_shape())
 
-  if n_fft is None:
-    n_fft = 2 * (t_shape[-1] - 1)
+  if fft_length is None:
+    fft_length = 2 * (t_shape[-1] - 1)
 
-  fft_length = tf.convert_to_tensor(n_fft, name='fft_length')
+  fft_length = tf.convert_to_tensor(fft_length, name='fft_length')
   if frame_length is None:
-    frame_length = tf.convert_to_tensor(n_fft, name='frame_length')
+    frame_length = tf.convert_to_tensor(fft_length, name='frame_length')
   if frame_step is None:
     frame_step = tf.convert_to_tensor(frame_length // 4, name='frame_step')
   
@@ -379,7 +380,7 @@ if __name__ == "__main__":
   y2 = tf.random.normal(dtype=tf.float32, shape=[1, 441000, 2])
   
   ### basic
-  stft_x = stft(y2, channel=True)
+  stft_x = stft(y, channel=True)
   print(stft_x.shape, stft_x.dtype)
   # istft_x = istft(stft_x, length=441000)
   # print(istft_x.shape, istft_x.dtype)
@@ -406,14 +407,14 @@ if __name__ == "__main__":
   ### length part
   # cut1 = cutting(y, 440000, channel=False)
   # print(cut1.shape)
-  # cut2 = cutting(y2, 440000)
+  # cut2 = cutting(y2, 440000, channel=True)
   # print(cut2.shape)
   # pad1 = padding(cut1, 441000, channel=False)
   # print(pad1.shape)
-  # pad2 = padding(cut2, 441000)
+  # pad2 = padding(cut2, 441000, channel=True)
   # print(pad2.shape)
   # tlen1 = to_length(y, 320000, channel=False)
   # print(tlen1.shape)
-  # tlen2 = to_length(y2, 500000)
+  # tlen2 = to_length(y2, 500000, channel=True)
   # print(tlen2.shape)
 

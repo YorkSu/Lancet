@@ -13,6 +13,8 @@ import numpy as np
 import tensorflow as tf
 import librosa as lrs
 
+from Lancet.train import audio
+
 
 _DTYPE = 'float32'
 np_dtype = np.float32
@@ -205,6 +207,237 @@ tf_dtype = tf.float32
 
 
 
+# class Stft(tf.keras.layers.Layer):
+#   """Stft
+  
+#     Description:
+#       Based on tf.signal.stft
+
+#     Args:
+#       n_fft: Int, default 2048.
+#       hop_length: Int, default None. None -> win_length/4
+#       win_length: Int, default None. None -> n_fft
+#       window: Str, default 'hann'.
+#       center: Bool, default True.
+#       pad_mode: Str, default 'reflect'.
+#       dtype: Str, default None. None -> 'float32'
+
+#     Input:
+#       tf.Tensor, shape=(None, Sample, Channel)
+
+#     Return:
+#       tf.Tensor, shape=(None, floor(1+n_fft/2), ceil(Sample/hop_length), Channel)
+#   """
+#   def __init__(
+#       self,
+#       frame_length=2048,
+#       frame_step=512,
+#       fft_length=None,
+#       window_fn='hann',
+#       pad_end=True,
+#       **kwargs):
+#     super().__init__(trainable=False, **kwargs)
+#     self.frame_length = frame_length
+#     self.frame_step = frame_step
+#     self.fft_length = fft_length
+#     self.window_fn = window_fn
+#     self.pad_end = pad_end
+
+#   def call(self, inputs):
+#     input_shape = tf.keras.backend.int_shape(inputs)
+#     if self.window_fn == 'hann':
+#       window_fn = tf.signal.hann_window
+#     else:
+#       window_fn = self.window_fn
+#     outputs = []
+#     if len(input_shape) == 2:
+#       for i in range(input_shape[-1]):
+#         xi = tf.keras.layers.Lambda(
+#             lambda x, t: x[:, t],
+#             arguments={'t': i})(inputs)
+#         yi = tf.signal.stft(
+#             xi,
+#             frame_length=self.frame_length,
+#             frame_step=self.frame_step,
+#             fft_length=self.fft_length,
+#             window_fn=window_fn,
+#             pad_end=self.pad_end)
+#         yi = tf.transpose(yi, [1, 0])
+#         outputs.append(tf.expand_dims(yi, -1))
+#     elif len(input_shape) == 3:
+#       for i in range(input_shape[-1]):
+#         xi = tf.keras.layers.Lambda(
+#             lambda x, t: x[:, :, t],
+#             arguments={'t': i})(inputs)
+#         yi = tf.signal.stft(
+#             xi,
+#             frame_length=self.frame_length,
+#             frame_step=self.frame_step,
+#             fft_length=self.fft_length,
+#             window_fn=window_fn,
+#             pad_end=self.pad_end)
+#         yi = tf.expand_dims(tf.transpose(yi, [0, 2, 1]), -1)
+#         outputs.extend([tf.math.real(yi), tf.math.imag(yi)])
+#     else:
+#       raise ValueError(f"[Invalid] nD, got {len(input_shape)}")
+    
+#     # # 拆出复数的实部和虚部
+#     # complexs = outputs
+#     # outputs = []
+#     # for c in complexs:
+#     #   outputs.extend([tf.math.real(c), tf.math.imag(c)])
+
+#     return tf.keras.layers.Concatenate(axis=-1)(outputs)
+
+#   def get_config(self):
+#     config = {
+#         'frame_length': self.frame_length,
+#         'frame_step': self.frame_step,
+#         'fft_length': self.fft_length,
+#         'window_fn': self.window_fn,
+#         'pad_end': self.pad_end,}
+#     return dict(list(super().get_config().items()) + list(config.items()))
+
+
+# class Istft(tf.keras.layers.Layer):
+#   """Istft
+  
+#     Description:
+#       Based on tf.signal.inverse_stft
+
+#     Args:
+#       length: Int, default None. If provided, the output `y` is zero-padded 
+#           or clipped to exactly.
+#       hop_length: Int, default None. None -> win_length/4
+#       win_length: Int, default None. None -> n_fft
+#       window: Str, default 'hann'.
+#       center: Bool, default True.
+#       pad_mode: Str, default 'reflect'.
+#       dtype: Str, default None. None -> 'float32'
+
+#     Input:
+#       tf.Tensor, shape=(None, floor(1+n_fft/2), ceil(Sample/hop_length), Channel)
+      
+#     Return:
+#       tf.Tensor, shape=(None, length or Sample, Channel)
+#   """
+#   def __init__(
+#       self,
+#       length=None,
+#       frame_length=2048,
+#       frame_step=512,
+#       fft_length=None,
+#       window_fn='hann',
+#       **kwargs):
+#     super().__init__(trainable=False, **kwargs)
+#     self.length = length
+#     self.frame_length = frame_length
+#     self.frame_step = frame_step
+#     self.fft_length = fft_length
+#     self.window_fn = window_fn
+    
+#   def call(self, inputs):
+#     input_shape = tf.keras.backend.int_shape(inputs)
+#     if self.window_fn == 'hann':
+#       window_fn = tf.signal.hann_window
+#       # window_fn = tf.signal.inverse_stft_window_fn(
+#       #     self.frame_step,
+#       #     forward_window_fn=tf.signal.hann_window)
+#     else:
+#       window_fn = self.window_fn
+#     outputs = []
+#     if len(input_shape) == 3:
+#       for i in range(input_shape[-1] // 2):
+#         xi = tf.keras.layers.Lambda(
+#             lambda x, t: x[:, :, 2 * t],
+#             arguments={'t': i})(inputs)
+#         xj = tf.keras.layers.Lambda(
+#             lambda x, t: x[:, :, 2 * t + 1],
+#             arguments={'t': i})(inputs)
+#         x = tf.complex(xi, xj)
+#         x = tf.transpose(x, [1, 0])
+#         print(x.shape, x.dtype)
+#         y = tf.signal.inverse_stft(
+#             x,
+#             frame_length=self.frame_length,
+#             frame_step=self.frame_step,
+#             fft_length=self.fft_length,
+#             window_fn=window_fn)
+#         outputs.append(tf.expand_dims(y, -1))
+#       outputs = tf.keras.layers.Concatenate(axis=-1)(outputs)
+#       if outputs.shape[-2] < self.length:
+#         outputs = tf.pad(outputs, paddings=((0, 0),
+#             (self.length - outputs.shape[-2], 0)))
+#       else:
+#         outputs = tf.keras.layers.Lambda(
+#               lambda x: x[:self.length, :])(outputs)
+#         # outputs = outputs[:self.length, :]
+#     elif len(input_shape) == 4:
+#       for i in range(input_shape[-1] // 2):
+#         xi = tf.keras.layers.Lambda(
+#             lambda x, t: x[:, :, :, 2 * t],
+#             arguments={'t': i})(inputs)
+#         xj = tf.keras.layers.Lambda(
+#             lambda x, t: x[:, :, :, 2 * t + 1],
+#             arguments={'t': i})(inputs)
+#         x = tf.complex(xi, xj)
+#         x = tf.transpose(x, [0, 2, 1])
+#         print(x.shape, x.dtype)
+#         y = tf.signal.inverse_stft(
+#             x,
+#             frame_length=self.frame_length,
+#             frame_step=self.frame_step,
+#             # fft_length=self.fft_length,
+#             # window_fn=window_fn
+#             )
+#         print(y.shape, y.dtype)
+#         outputs.append(tf.expand_dims(y, -1))
+#       outputs = tf.keras.layers.Concatenate(axis=-1)(outputs)
+#       print(outputs.shape)
+#       if self.length is not None:
+#         output_shape = tf.keras.backend.int_shape(outputs)
+#         if output_shape[-2] < self.length:
+#           outputs = tf.pad(outputs, paddings=((0, 0),
+#               (0, self.length - output_shape[-2]),
+#               (0, 0)))
+#         else:
+#           outputs = tf.keras.layers.Lambda(
+#               lambda x: x[:, :self.length, :])(outputs)
+#           # outputs = outputs[:, :self.length, :]
+#     else:
+#       raise ValueError(f"[Invalid] nD, got {len(input_shape)}")
+    
+#     return outputs # tf.keras.layers.Concatenate(axis=-1)(outputs)
+
+#   def get_config(self):
+#     config = {
+#         'frame_length': self.frame_length,
+#         'frame_step': self.frame_step,
+#         'fft_length': self.fft_length,
+#         'window_fn': self.window_fn,}
+#     return dict(list(super().get_config().items()) + list(config.items()))
+
+
+class Split(tf.keras.layers.Layer):
+  """Split
+  
+    Description:
+      FIXME
+  """
+  def __init__(self, **kwargs):
+    super().__init__(**kwargs)
+
+  def build(self, input_shape):
+    self.built = True
+
+  def call(self, inputs):
+    return 
+
+
+
+
+
+
 class Stft(tf.keras.layers.Layer):
   """Stft
   
@@ -228,64 +461,85 @@ class Stft(tf.keras.layers.Layer):
   """
   def __init__(
       self,
-      frame_length=2048,
-      frame_step=512,
-      fft_length=None,
+      fft_length=2048,
+      frame_length=None,
+      frame_step=None,
       window_fn='hann',
       pad_end=True,
       **kwargs):
     super().__init__(trainable=False, **kwargs)
+    self.fft_length = fft_length
     self.frame_length = frame_length
     self.frame_step = frame_step
-    self.fft_length = fft_length
     self.window_fn = window_fn
     self.pad_end = pad_end
 
   def call(self, inputs):
-    input_shape = tf.keras.backend.int_shape(inputs)
-    if self.window_fn == 'hann':
-      window_fn = tf.signal.hann_window
-    else:
-      window_fn = self.window_fn
+    # input_shape = tf.keras.backend.int_shape(inputs)
+    Tensors = audio.split(inputs)
     outputs = []
-    if len(input_shape) == 2:
-      for i in range(input_shape[-1]):
-        xi = tf.keras.layers.Lambda(
-            lambda x, t: x[:, t],
-            arguments={'t': i})(inputs)
-        yi = tf.signal.stft(
-            xi,
-            frame_length=self.frame_length,
-            frame_step=self.frame_step,
-            fft_length=self.fft_length,
-            window_fn=window_fn,
-            pad_end=self.pad_end)
-        yi = tf.transpose(yi, [1, 0])
-        outputs.append(tf.expand_dims(yi, -1))
-    elif len(input_shape) == 3:
-      for i in range(input_shape[-1]):
-        xi = tf.keras.layers.Lambda(
-            lambda x, t: x[:, :, t],
-            arguments={'t': i})(inputs)
-        yi = tf.signal.stft(
-            xi,
-            frame_length=self.frame_length,
-            frame_step=self.frame_step,
-            fft_length=self.fft_length,
-            window_fn=window_fn,
-            pad_end=self.pad_end)
-        yi = tf.expand_dims(tf.transpose(yi, [0, 2, 1]), -1)
-        outputs.extend([tf.math.real(yi), tf.math.imag(yi)])
-    else:
-      raise ValueError(f"[Invalid] nD, got {len(input_shape)}")
-    
-    # # 拆出复数的实部和虚部
-    # complexs = outputs
-    # outputs = []
-    # for c in complexs:
-    #   outputs.extend([tf.math.real(c), tf.math.imag(c)])
+    for channel in Tensors:
+      outputs.append(tf.signal.stft(
+          channel,
+          fft_length=self.fft_length,
+          frame_length=self.frame_length,
+          frame_step=self.frame_step,
 
-    return tf.keras.layers.Concatenate(axis=-1)(outputs)
+          ))
+    outputs = audio.merge(outputs)
+    # outputs = audio.stft(
+    #     inputs,
+    #     fft_length=self.fft_length,
+    #     frame_length=self.frame_length,
+    #     frame_step=self.frame_step,
+    #     # channel=True
+    #     )
+    outputs = audio.de_complex(outputs)
+    outputs = audio.swap(outputs)# , channel=True
+    return outputs
+    # if self.window_fn == 'hann':
+    #   window_fn = tf.signal.hann_window
+    # else:
+    #   window_fn = self.window_fn
+    # outputs = []
+    # if len(input_shape) == 2:
+    #   for i in range(input_shape[-1]):
+    #     xi = tf.keras.layers.Lambda(
+    #         lambda x, t: x[:, t],
+    #         arguments={'t': i})(inputs)
+    #     yi = tf.signal.stft(
+    #         xi,
+    #         frame_length=self.frame_length,
+    #         frame_step=self.frame_step,
+    #         fft_length=self.fft_length,
+    #         window_fn=window_fn,
+    #         pad_end=self.pad_end)
+    #     yi = tf.transpose(yi, [1, 0])
+    #     outputs.append(tf.expand_dims(yi, -1))
+    # elif len(input_shape) == 3:
+    #   for i in range(input_shape[-1]):
+    #     xi = tf.keras.layers.Lambda(
+    #         lambda x, t: x[:, :, t],
+    #         arguments={'t': i})(inputs)
+    #     yi = tf.signal.stft(
+    #         xi,
+    #         frame_length=self.frame_length,
+    #         frame_step=self.frame_step,
+    #         fft_length=self.fft_length,
+    #         window_fn=window_fn,
+    #         pad_end=self.pad_end)
+    #     yi = tf.expand_dims(tf.transpose(yi, [0, 2, 1]), -1)
+    #     outputs.extend([tf.math.real(yi), tf.math.imag(yi)])
+    # else:
+    #   raise ValueError(f"[Invalid] nD, got {len(input_shape)}")
+    
+    # # # 拆出复数的实部和虚部
+    # # complexs = outputs
+    # # outputs = []
+    # # for c in complexs:
+    # #   outputs.extend([tf.math.real(c), tf.math.imag(c)])
+
+    # return tf.keras.layers.Concatenate(axis=-1)(outputs)
 
   def get_config(self):
     config = {
@@ -414,6 +668,7 @@ class Istft(tf.keras.layers.Layer):
         'fft_length': self.fft_length,
         'window_fn': self.window_fn,}
     return dict(list(super().get_config().items()) + list(config.items()))
+
 
 
 class Mel(tf.keras.layers.Layer):
@@ -689,6 +944,6 @@ if __name__ == "__main__":
   # print(y4.shape)
   # yc = tf.keras.layers.Conv2D(2, 3, padding='same')(y2)
   # y5 = Istft(length=441000)(y2)
-  y5 = Istft(length=512 * 512)(y2)
-  print(y5.shape, y5.dtype)
+  # y5 = Istft(length=512 * 512)(y2)
+  # print(y5.shape, y5.dtype)
 
