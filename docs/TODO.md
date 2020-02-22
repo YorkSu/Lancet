@@ -1,6 +1,6 @@
 - [ ] 创建`audio.py`，参照`librosa`算法自写`tf`函数
   - [x] `stft`
-  - [ ] `istft`
+  - [x] `istft`
   - [ ] `mel`
   - [ ] `cqt`
 - [x] 在`audio`中还可以加入的处理
