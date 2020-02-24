@@ -10,7 +10,10 @@
 
 
 import tensorflow as tf
+from tensorflow.keras import layers
 from tensorflow.keras import optimizers  # pylint:disable=import-error, unused-import
+
+from Lancet.core.model import layer
 
 
 class Counter(object):
@@ -97,6 +100,20 @@ def add(
   if name is None:
     name = get_name('add')
   return tf.keras.layers.Add(
+      name=name,
+      **kwargs)
+
+
+def multiply(
+    name=None,
+    **kwargs):
+  """Multiply Layer
+
+    Input must be a list
+  """
+  if name is None:
+    name = get_name('multiply')
+  return tf.keras.layers.Multiply(
       name=name,
       **kwargs)
 
@@ -297,7 +314,7 @@ def conv3d(
   """
   if name is None:
     name = get_name('Conv3D')
-  return tf.keras.layers.Conv2D(
+  return tf.keras.layers.Conv3D(
       filters=filters,
       kernel_size=kernel_size,
       strides=strides,
@@ -445,6 +462,113 @@ def batchnormalization(
 # ========================
 # Custom Layer
 # ========================
+
+
+def convbn(
+    filters: int,
+    kernel_size,
+    strides=1,
+    padding='same',
+    activation=None,
+    use_bn=True,
+    use_bias=False,
+    order=1,
+    transpose=False,
+    data_format=None,
+    kernel_initializer='glorot_uniform',
+    bias_initializer='zeros',
+    kernel_regularizer=None,
+    bias_regularizer=None,
+    activity_regularizer=None,
+    kernel_constraint=None,
+    bias_constraint=None,
+    axis=-1, 
+    momentum=0.99, 
+    epsilon=1e-3, 
+    center=True, 
+    scale=True,
+    beta_initializer='zeros', 
+    gamma_initializer='ones', 
+    moving_mean_initializer='zeros',
+    moving_variance_initializer='ones', 
+    beta_regularizer=None, 
+    gamma_regularizer=None,
+    beta_constraint=None, 
+    gamma_constraint=None, 
+    renorm=False, 
+    renorm_clipping=None,
+    renorm_momentum=0.99, 
+    fused=None, 
+    virtual_batch_size=None,
+    adjustment=None,
+    name=None,
+    **kwargs):
+  """Conv2D with BN and Activation
+  
+    Args:
+      order: Int, default 1.
+        1 - Conv -> BN -> Activation
+        2 - BN -> Activation -> Conv
+        3 - Conv -> Activation -> BN
+        4 - Activation -> BN -> Conv
+      transpose: Bool, default False. if True, use Conv2DTranspose instead of Conv2D
+  """
+  if name is None:
+    name = get_name('ConvBN')
+  return layer.ConvBN(
+      filters=filters,
+      kernel_size=kernel_size,
+      strides=strides,
+      padding=padding,
+      activation=activation,
+      use_bn=use_bn,
+      use_bias=use_bias,
+      order=order,
+      transpose=transpose,
+      data_format=data_format,
+      kernel_initializer=kernel_initializer,
+      bias_initializer=bias_initializer,
+      kernel_regularizer=kernel_regularizer,
+      bias_regularizer=bias_regularizer,
+      activity_regularizer=activity_regularizer,
+      kernel_constraint=kernel_constraint,
+      bias_constraint=bias_constraint,
+      axis=axis,
+      momentum=momentum,
+      epsilon=epsilon,
+      center=center,
+      scale=scale,
+      beta_initializer=beta_initializer,
+      gamma_initializer=gamma_initializer,
+      moving_mean_initializer=moving_mean_initializer,
+      moving_variance_initializer=moving_variance_initializer,
+      beta_regularizer=beta_regularizer,
+      gamma_regularizer=gamma_regularizer,
+      beta_constraint=beta_constraint,
+      gamma_constraint=gamma_constraint,
+      renorm=renorm,
+      renorm_clipping=renorm_clipping,
+      renorm_momentum=renorm_momentum,
+      fused=fused,
+      virtual_batch_size=virtual_batch_size,
+      adjustment=adjustment,
+      name=name,
+      **kwargs)
+
+
+def resolutionscal2d(
+    size,
+    data_format=None,
+    name=None,
+    **kwargs):
+  """ResolutionScaling2D"""
+  if name is None:
+    name = get_name('ResolutionScaling2D')
+  return layer.ResolutionScal2D(
+      size=size,
+      data_format=data_format,
+      name=name,
+      **kwargs)
 
 
 # ========================

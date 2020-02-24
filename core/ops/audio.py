@@ -12,10 +12,10 @@
 import math
 
 import numpy as np
-import scipy as sp
-import librosa
+import scipy.signal
+# import librosa
 
-from Lancet.core.ops import array
+# from Lancet.core.ops import array
 
 
 def stft(
@@ -39,7 +39,6 @@ def stft(
 
     Return:
       FIXME
-      Tensor[shape=(n_frames, 1+fft_length/2), dtype=tf.complex64]
   """
   fft_length = int(fft_length)
   if frame_length is None:
@@ -69,13 +68,53 @@ def stft(
   for i in range(f_shape[-1]):
     frame = signal[..., i * frame_step:i * frame_step + frame_length]
     frames.append(np.fft.rfft(fft_window * frame, axis=-1))
-    # frames.append(signal[..., i * frame_step:i * frame_step + frame_length])
-  
-  # outputs = []
-  # for frame in frames:
-  #   outputs.append(np.fft.rfft(fft_window * frame, axis=-1))
 
   return np.stack(frames, axis=-1)
+
+
+def istft(
+    signal,
+    fft_length=2048,
+    frame_length=None,
+    frame_step=None,
+    length=None,
+    window='hann',
+    pad_end=True,
+    pad_mode='reflect',
+    **kwargs):
+  """Inverse Short-time Fourier transform (ISTFT)
+
+    Description:
+      Converts a complex-valued spectrogram `stft_matrix` to time-series `y`
+      by minimizing the mean squared error between `stft_matrix` and STFT of
+      `y` as described in up to Section 2 (reconstruction from MSTFT).
+  
+      In general, window function, hop length and other parameters should be 
+      same as in stft, which mostly leads to perfect reconstruction of a 
+      signal from unmodified `stft_matrix`.
+  
+    Args:
+      FIXME
+
+    Return:
+      FIXME
+  """
+  fft_length = int(fft_length)
+  if frame_length is None:
+    frame_length = fft_length
+  else:
+    frame_length = int(frame_length)
+  if frame_step is None:
+    frame_step = fft_length // 4
+  else:
+    frame_step = int(frame_step)
+  del kwargs
+
+  signal = np.asarray(signal, np.float32)
+  s_shape = list(signal.shape)
+  s_rank = len(s_shape)
+
+  return
 
 
 def get_window(window, fft_length, frame_length, rank, axis=-1, mode='constant'):
@@ -87,7 +126,7 @@ def get_window(window, fft_length, frame_length, rank, axis=-1, mode='constant')
   if callable(window):
     fft_window = window(frame_length)
   elif isinstance(window, (str, tuple)) or np.isscalar(window):
-    fft_window = sp.signal.get_window(window, frame_length, fftbins=True)
+    fft_window = scipy.signal.get_window(window, frame_length, fftbins=True)
   elif isinstance(window, (np.ndarray, list)):
     if len(window) == frame_length:
       fft_window = np.asarray(window)

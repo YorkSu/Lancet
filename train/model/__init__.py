@@ -2,7 +2,7 @@
 """__init__
 
   File: 
-    /Lancet/train
+    /Lancet/train/model
 
   Description: 
     import settings

@@ -32,8 +32,8 @@ class Network(Keras_Network):
       **kwargs):
     self.input_shape = input_shape
     self.output_shape = output_shape
+    self.__dict__ = {**self.__dict__, **kwargs}
     self.setup()
-    del kwargs
 
   def setup(self):
     self.args()
