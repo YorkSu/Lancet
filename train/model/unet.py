@@ -13,7 +13,7 @@ from Lancet.core.model import nn
 from Lancet.core.model import network
 
 
-class UNet(network.Network):
+class UNet(network.Audio):
   """UNet
 
     Description: 
@@ -25,10 +25,10 @@ class UNet(network.Network):
     self.kernel_shape = 5
     self.strides = 2
     self.activation = 'relu'
-    self.output_activation = 'relu'
+    self.output_activation = 'sigmoid'
     self.drop = 0.5
 
-  def build(self):
+  def build(self, name=None):
     # define get layer function
     def conv(filters):
       return nn.convbn(
@@ -80,18 +80,19 @@ class UNet(network.Network):
     x = xt6
     outputs = nn.conv2d(
         self.input_shape[-1],
-        (4, 4),
-        activation=self.output_activation)(xt6)
-    outputs = nn.layers.Multiply()([outputs, inputs])
-    return nn.model(inputs, outputs)
+        (4, 4))(xt6)
+    # outputs = nn.layers.Multiply()([outputs, inputs])
+    return nn.model(inputs, outputs, name=name)
 
 
-def unet(*args, **kwargs):
-  """unet"""
-  return UNet(*args, **kwargs)
+unet = UNet
+
+# def unet(*args, **kwargs):
+#   """unet"""
+#   return UNet(*args, **kwargs)
 
 
 if __name__ == "__main__":
-  model = unet((1025, 512, 4), (1025, 512, 4))
+  model = UNet(['Vocal', 'Inst'], (1025, 512, 4))
   model.summary()
   

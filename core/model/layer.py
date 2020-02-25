@@ -10,6 +10,8 @@
 
 
 import tensorflow as tf
+from tensorflow.python.keras.layers.merge import _Merge  # pylint:disable=no-name-in-module, import-error
+
 
 from Lancet.core.model import util
 
@@ -332,11 +334,63 @@ class Split(tf.keras.layers.Layer):
     super().__init__(**kwargs)
     self.axis = axis
 
-  def build(self, input_shape):
-    self.built = True
-
   def call(self, inputs):
-    return 
+    input_shape = tf.keras.backend.int_shape(inputs)
+    if self.axis > 0:
+      axis = self.axis + 1
+    else:
+      axis = self.axis
+    slices = tf.keras.layers.Lambda(tf.split, arguments={
+        'num_or_size_splits': input_shape[axis],
+        'axis': axis})(inputs)
+    outputs = []
+    output_shape = list(input_shape[1:])
+    output_shape.pop(self.axis)
+    for i in slices:
+      outputs.append(tf.keras.layers.Reshape(output_shape)(i))
+    return outputs
+
+  def get_config(self):
+    config = {
+        'axis': self.axis,}
+    return dict(list(super().get_config().items()) + list(config.items()))
+
+
+class Stack(_Merge):
+  """Stack
+
+    Description:
+      FIXME
+  """
+  def __init__(self, axis=-1, **kwargs):
+    super().__init__(**kwargs)
+    self.axis = axis
+    self._reshape_required = False
+
+  def build(self, input_shape):
+    # Used purely for shape validation.
+    if not isinstance(input_shape, list) or len(input_shape) < 2:
+      raise ValueError('A `Stack` layer should be called '
+                       'on a list of at least 2 inputs')
+    if all(shape is None for shape in input_shape):
+      return
+    reduced_inputs_shapes = [list(shape) for shape in input_shape]
+    shape_set = set()
+    for i in range(len(reduced_inputs_shapes)):
+      del reduced_inputs_shapes[i][self.axis]
+      shape_set.add(tuple(reduced_inputs_shapes[i]))
+    if len(shape_set) > 1:
+      raise ValueError('A `Stack` layer requires '
+                       'inputs with matching shapes '
+                       'except for the concat axis. '
+                       'Got inputs shapes: %s' % (input_shape))
+
+  def _merge_function(self, inputs):
+    input_shape = tf.keras.backend.int_shape(inputs[0])[1:] + (1,)
+    outputs = []
+    for i in inputs:
+      outputs.append(tf.keras.layers.Reshape(input_shape)(i))
+    return tf.keras.backend.concatenate(outputs, axis=self.axis)
 
   def get_config(self):
     config = {
@@ -346,6 +400,10 @@ class Split(tf.keras.layers.Layer):
 
 if __name__ == "__main__":
   y = tf.random.normal(shape=[1, 32, 32, 3], dtype=tf.float32)
-  y1 = ConvBN(16, 3)(y)
-  print(y1.shape)
+  # y1 = ConvBN(16, 3)(y)
+  # print(y1.shape)
+  y2 = Split(axis=2)(y)
+  print(type(y2), len(y2), y2[0].shape)
+  y3 = Stack()(y2)
+  print(y3.shape)
 

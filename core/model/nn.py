@@ -9,9 +9,12 @@
 """
 
 
+# pylint:disable=import-error, unused-import
+
+
 import tensorflow as tf
 from tensorflow.keras import layers
-from tensorflow.keras import optimizers  # pylint:disable=import-error, unused-import
+from tensorflow.keras import optimizers  
 
 from Lancet.core.model import layer
 
